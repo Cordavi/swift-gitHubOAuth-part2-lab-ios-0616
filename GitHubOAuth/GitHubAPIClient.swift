@@ -20,8 +20,10 @@ class GitHubAPIClient {
       static let oauth = "https://github.com/login/oauth/authorize?client_id=\(Secrets.clientID)&scope=repo"
       
       static func starred(repoName repo: String) -> String? {
-         
-         let starredURL = "https://api.github.com/user/starred/\(repo)?client_id=\(Secrets.clientID)&client_secret=\(Secrets.clientSecret)&access_token="
+         if let accessToken = GitHubAPIClient.getAccessToken() {
+            let starredURL = "https://api.github.com/user/starred/\(repo)?client_id=\(Secrets.clientID)&client_secret=\(Secrets.clientSecret)&access_token=" + accessToken
+            return starredURL
+         }
          
          // TO DO: Add access token to starredURL string and return
          return nil
@@ -59,8 +61,11 @@ extension GitHubAPIClient {
    
    
    class func hasToken() -> Bool {
-      
-      return false
+      if GitHubAPIClient.getAccessToken() != nil {
+         return true
+      } else {
+         return false
+      }
    }
    
    // Start access token request process
@@ -78,12 +83,16 @@ extension GitHubAPIClient {
             if let data = response.data {
                if let accessTokenResponse = JSON(data: data).dictionaryObject {
                   let accessToken = accessTokenResponse["access_token"] as? String
-                  saveAccess(token: accessToken, completionHandler: { response in
-                     Locksmith.saveData(["access token", "\(accessToken)"], forUserAccount: <#T##String#>)
-                  })
+                  if let accessToken = accessToken {
+                     saveAccess(token: accessToken, completionHandler: { saveResponse in
+                        if saveResponse {
+                           completionHandler(true)
+                        }
+                        }
+                     )
+                  }
                }
             }
-            completionHandler(true)
          } else {
             completionHandler(false)
          }
@@ -92,14 +101,26 @@ extension GitHubAPIClient {
    
    // Save access token from request response to keychain
    private class func saveAccess(token token: String, completionHandler: (Bool) -> ()) {
-      
+      do {
+         try Locksmith.saveData(["access token": token], forUserAccount: "gitHub")
+         completionHandler(true)
+      } catch {
+         print(error)
+         completionHandler(false)
+      }
    }
    
    // Get access token from keychain
    private class func getAccessToken() -> String? {
-      
+      let gitHubUserAccount = Locksmith.loadDataForUserAccount("gitHub")
+      if let gitHubUserAccount = gitHubUserAccount {
+         let accessToken = gitHubUserAccount["access token"]
+         if let accessToken = accessToken {
+            let accessTokenString = String(accessToken)
+            return accessTokenString
+         }
+      }
       return nil
-      
    }
    
    // Delete access token from keychain
@@ -107,19 +128,6 @@ extension GitHubAPIClient {
       
    }
 }
-
-//Use SwiftyJSON to get the access token from the response you were working with in the previous step.
-//Call saveAccess(token:completionHandler:) to pass the access token you retrieved from the JSON data.
-//Define the saveAccess(token:completionHandler:) method using the Locksmith pod. Use the method, try Locksmith.saveData(["some key": "some value"], forUserAccount: "myUserAccount").
-//Key is "access token". Value is "token from response". User account is "github".
-//The completionHandler should callback with true or false depending on whether the access token is successfully saved.
-//Back inside the response section of the startAccessTokenRequest(url:completionHandler:) method, update the order of events to be:
-//Receive response
-//Serialize JSON data using SwiftyJSON
-//Call saveAccess(token:completionHandler:) method
-//If save succeeded, call the completion handler of startAccessTokenRequest(url:completionHandler:) with the appropriate response.
-//Run the application using print statements accordingly to see that everything is working correctly.
-
 
 // MARK: Activity
 extension GitHubAPIClient {
